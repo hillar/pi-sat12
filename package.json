@@ -1,0 +1,18 @@
+{
+  "name": "sat12",
+  "version": "0.0.0",
+  "description": "SAT-12 structured analysis techniques extension for Pi",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "pi-webaio": "^0.8.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": ">=0.84.0"
+  }
+}
