@@ -8,11 +8,30 @@
       "./src/index.ts"
     ]
   },
+  "scripts": {
+    "link-pi-deps": "node evals/link-pi-deps.mjs",
+    "pretest": "node evals/link-pi-deps.mjs",
+    "test": "node --test 'evals/*.test.ts'"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "pi-webaio": "^0.8.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": ">=0.84.0"
+    "@earendil-works/pi-agent-core": ">=0.84.0",
+    "@earendil-works/pi-ai": ">=0.84.0",
+    "@earendil-works/pi-coding-agent": ">=0.84.0",
+    "typebox": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-agent-core": {
+      "optional": true
+    },
+    "@earendil-works/pi-ai": {
+      "optional": true
+    },
+    "typebox": {
+      "optional": true
+    }
   }
 }

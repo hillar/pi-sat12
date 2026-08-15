@@ -1,0 +1,147 @@
+{
+  "generated": "2026-08-15T23:30:22.882Z",
+  "model": "b200/Qwen/Qwen3.6-27B",
+  "runs_per_fixture": 10,
+  "records": [
+    {
+      "fixture": "user_override",
+      "run": 1,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 5,
+      "reliability": "Medium",
+      "duration_ms": 20060
+    },
+    {
+      "fixture": "user_override",
+      "run": 2,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 5,
+      "reliability": "Medium",
+      "duration_ms": 17956
+    },
+    {
+      "fixture": "user_override",
+      "run": 3,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 3,
+      "reliability": "Medium",
+      "duration_ms": 23740
+    },
+    {
+      "fixture": "user_override",
+      "run": 4,
+      "ok": true,
+      "attempts": 2,
+      "first_attempt_pass": false,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 3,
+      "reliability": "Medium",
+      "duration_ms": 33533,
+      "retry_causes": [
+        "override_code_mismatch: Source \"docs/crypto/migration-plan.md\" is user_overridden to \"A1\" but emitted code \"A2\". Use the user-supplied rating."
+      ]
+    },
+    {
+      "fixture": "user_override",
+      "run": 5,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 4,
+      "reliability": "Medium",
+      "duration_ms": 20666
+    },
+    {
+      "fixture": "user_override",
+      "run": 6,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 4,
+      "reliability": "Medium",
+      "duration_ms": 18164
+    },
+    {
+      "fixture": "user_override",
+      "run": 7,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 4,
+      "reliability": "Medium",
+      "duration_ms": 20616
+    },
+    {
+      "fixture": "user_override",
+      "run": 8,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 5,
+      "reliability": "Medium",
+      "duration_ms": 21626
+    },
+    {
+      "fixture": "user_override",
+      "run": 9,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 4,
+      "reliability": "Medium",
+      "duration_ms": 20554
+    },
+    {
+      "fixture": "user_override",
+      "run": 10,
+      "ok": true,
+      "attempts": 2,
+      "first_attempt_pass": false,
+      "failing_rule": "none",
+      "sources_count": 2,
+      "gaps_count": 4,
+      "reliability": "Medium",
+      "duration_ms": 29657,
+      "retry_causes": [
+        "override_code_mismatch: Source \"docs/crypto/migration-plan.md\" is user_overridden to \"A1\" but emitted code \"A2\". Use the user-supplied rating."
+      ]
+    }
+  ],
+  "usage": {
+    "input": 22795,
+    "output": 43680,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 66475,
+    "cost": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "total": 0
+    }
+  }
+}

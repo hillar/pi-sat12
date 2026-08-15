@@ -13,12 +13,17 @@ import type { SynthesisOutput } from "./synthesis.ts";
 
 export type SessionStatus = "in_progress" | "completed" | "paused" | "cancelled" | "failed";
 
+/** A full pipeline run gathers evidence again when the saved evidence is older than this. */
+export const EVIDENCE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export interface SessionState {
 	id: string;
 	question: string;
 	status: SessionStatus;
 	statusReason?: string;
 	evidenceText?: string;
+	/** ISO time when the code gathered evidenceText. The staleness check uses it. */
+	evidenceGatheredAt?: string;
 	techniqueResults: Record<string, TechniqueResult>;
 	adversarialExchanges: Record<string, AdversarialExchange>;
 	synthesis?: SynthesisOutput;

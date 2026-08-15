@@ -3,22 +3,11 @@
 import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
 import type { AssistantMessage, Message, Model, Usage } from "@earendil-works/pi-ai";
+import { StringEnum as piStringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-
-
-
-
-
-export function StringEnum<T extends string>(
-	values: readonly T[],
-	opts?: Record<string, unknown>,
-): TSchema {
-	return Type.Union(
-		values.map((v) => Type.Literal(v)),
-		opts,
-	) as TSchema;
-}
+// Export StringEnum again from @earendil-works/pi-ai.
+export const StringEnum = piStringEnum;
 
 
 export function extractText(msg: AssistantMessage): string {
@@ -190,18 +179,17 @@ export function tryParseAndValidate<T>(
 		if (Value.Check(schema, clone)) {
 			return { ok: true, data: clone as T };
 		}
-		const casted = Value.Cast(schema, clone);
-		if (Value.Check(schema, casted)) {
-			return { ok: true, data: casted as T };
-		}
 	} catch {
 		
 	}
 
+	// Report the field path with each message. TypeBox names the field
+	// `instancePath`. An older name gave `undefined` here, which hid the field
+	// from the model during a retry.
 	const errors = [...Value.Errors(schema, parsed)];
 	const msg = errors
 		.slice(0, 3)
-		.map((e) => `${e.path}: ${e.message}`)
+		.map((e) => `${e.instancePath || "(root)"}: ${e.message}`)
 		.join("; ");
 	return { ok: false, error: `Schema validation failed: ${msg}` };
 }
@@ -246,12 +234,15 @@ function prepareNode(node: Record<string, unknown>): void {
 export class TechniqueValidationError extends Error {
 	readonly validationError: string;
 	readonly schema: unknown;
+	/** Number of model calls made before the failure. */
+	readonly attempts: number;
 
-	constructor(validationError: string, schema: unknown) {
+	constructor(validationError: string, schema: unknown, attempts = 0) {
 		super(`Technique output failed validation after retry: ${validationError}`);
 		this.name = "TechniqueValidationError";
 		this.validationError = validationError;
 		this.schema = schema;
+		this.attempts = attempts;
 	}
 }
 
@@ -382,7 +373,14 @@ export async function completeStructured<T>(
 	ctx: ExtensionContext,
 	opts: StructuredCallOptions<T>,
 	maxAttempts = 4,
-): Promise<{ data: T; usage: Usage; durationMs: number }> {
+): Promise<{
+	data: T;
+	usage: Usage;
+	durationMs: number;
+	attempts: number;
+	/** Validation error from each failed attempt. Empty when attempt 1 passed. */
+	retryErrors: string[];
+}> {
 	const preparedSchema = prepareStrictSchema(opts.schema);
 
 	const fullSystemPrompt =
@@ -402,6 +400,8 @@ export async function completeStructured<T>(
 	let currentMessages: Message[] = [...opts.messages];
 	let lastError = "";
 	let lastText = "";
+	/** Validation error from each failed attempt. Empty when attempt 1 passed. */
+	const retryErrors: string[] = [];
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		checkAborted(opts.signal, ctx);
@@ -429,10 +429,17 @@ export async function completeStructured<T>(
 		lastText = extractText(response);
 		const parsed = check(lastText);
 		if (parsed.ok) {
-			return { data: parsed.data, usage: combinedUsage, durationMs: totalDurationMs };
+			return {
+				data: parsed.data,
+				usage: combinedUsage,
+				durationMs: totalDurationMs,
+				attempts: attempt,
+				retryErrors,
+			};
 		}
 
 		lastError = parsed.error;
+		retryErrors.push(parsed.error);
 
 		if (attempt < maxAttempts) {
 			let errorFeedback = `Your previous output failed validation.\n\nError: ${lastError}\n\n`;
@@ -456,7 +463,7 @@ export async function completeStructured<T>(
 		}
 	}
 
-	throw new TechniqueValidationError(lastError, preparedSchema);
+	throw new TechniqueValidationError(lastError, preparedSchema, maxAttempts);
 }
 
 
@@ -551,7 +558,7 @@ export function resolveAdversarialModels(
 	
 	let primaryModel: Model<any>;
 	const primaryRes = resolveModel(ctx, params.primary_model);
-	if (primaryRes.error) {
+	if (!primaryRes.model) {
 		if (params.is_explicit_primary || !ctx.model) {
 			return { primaryModel: null as any, notifications, error: primaryRes.error };
 		}

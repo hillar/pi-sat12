@@ -144,3 +144,12 @@ vite.config.ts.timestamp-*
 
 
 .DS_Store
+
+# Pi session state written by the extension at run time.
+.pi/
+
+# Raw eval generations. Keep RESULTS.md and results.json, drop the bulk.
+evals/results/*/raw/
+
+# Chunkhound index.
+.chunkhound/

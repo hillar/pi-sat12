@@ -1,0 +1,45 @@
+{
+  "generated": "2026-08-15T22:45:30.623Z",
+  "model": "b200/Qwen/Qwen3.6-27B",
+  "runs_per_fixture": 1,
+  "records": [
+    {
+      "fixture": "notice_only",
+      "run": 1,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 0,
+      "gaps_count": 4,
+      "reliability": "Low",
+      "duration_ms": 15906
+    },
+    {
+      "fixture": "single_source",
+      "run": 1,
+      "ok": true,
+      "attempts": 1,
+      "first_attempt_pass": true,
+      "failing_rule": "none",
+      "sources_count": 1,
+      "gaps_count": 4,
+      "reliability": "Medium",
+      "duration_ms": 16156
+    }
+  ],
+  "usage": {
+    "input": 3516,
+    "output": 5876,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 9392,
+    "cost": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "total": 0
+    }
+  }
+}

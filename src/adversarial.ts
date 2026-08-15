@@ -1,6 +1,7 @@
 
 
 import { Type, type Static } from "typebox";
+import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	completeStructured,
@@ -369,6 +370,7 @@ async function critiqueOneTechnique(
 								evidenceText,
 								techniqueId,
 								techniqueName,
+								output,
 								lastCritique,
 								lastRebuttal,
 							),
@@ -394,6 +396,7 @@ async function critiqueOneTechnique(
 									evidenceText,
 									techniqueId,
 									techniqueName,
+									output,
 									lastCritique,
 									lastRebuttal,
 								),

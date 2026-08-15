@@ -230,15 +230,92 @@ function patternMatches(sourceId: string, pattern: string): boolean {
 }
 
 
+export interface AdmiraltySourceEntry {
+	source_id: string;
+	admiralty_code?: string;
+	reliability?: SourceReliability;
+	credibility: InfoCredibility;
+	corroborated_by?: string[];
+	user_overridden?: boolean;
+}
+
+/**
+ * Return the user override code for `sourceId`.
+ * Match the key by exact text or by path prefix.
+ * Use the same match rules as resolveAdmiraltyRating.
+ */
+function findUserOverrideCode(
+	sourceId: string,
+	userOverrides: Record<string, string>,
+): string | undefined {
+	const cleanSource = sourceId.replace(/^@/, "").replace(/\/$/, "");
+	if (userOverrides[sourceId]) return userOverrides[sourceId];
+	if (userOverrides[cleanSource]) return userOverrides[cleanSource];
+	for (const [key, codeVal] of Object.entries(userOverrides)) {
+		const cleanKey = key.replace(/^@/, "").replace(/\/$/, "");
+		if (cleanKey && (cleanSource === cleanKey || cleanSource.startsWith(`${cleanKey}/`))) {
+			return codeVal;
+		}
+	}
+	return undefined;
+}
+
 export function validateAdmiraltySemantics(
-	sourceRatings: Array<{ source_id: string; credibility: InfoCredibility; user_overridden?: boolean }>,
-	corroborationCounts?: Map<string, number>,
+	sourceRatings: AdmiraltySourceEntry[],
+	options?: { userOverrides?: Record<string, string> },
 ): string | null {
+	const userOverrides = options?.userOverrides;
+	const ids = new Set<string>();
+
 	for (const s of sourceRatings) {
-		if (s.credibility === "1" && !s.user_overridden) {
-			const count = corroborationCounts?.get(s.source_id) ?? 1;
-			if (count < 2) {
-				return `Source "${s.source_id}" is rated credibility "1" (Confirmed) but has only ${count} source. Single-source reporting cannot be rated "1" without multi-source corroboration or explicit user override.`;
+		// Rule 2: do not allow a duplicate source_id.
+		if (ids.has(s.source_id)) {
+			return `Duplicate source_id "${s.source_id}". Each source must appear exactly once.`;
+		}
+		ids.add(s.source_id);
+	}
+
+	for (const s of sourceRatings) {
+		// Rule 1: admiralty_code must equal reliability plus credibility.
+		if (s.admiralty_code && s.reliability) {
+			const expected = `${s.reliability}${s.credibility}`;
+			if (s.admiralty_code.toUpperCase() !== expected) {
+				return `Source "${s.source_id}" has admiralty_code "${s.admiralty_code}" but reliability/credibility fields imply "${expected}". They must agree.`;
+			}
+		}
+
+		// Rule 3: each corroborated_by id must exist. A source must not list itself.
+		if (s.corroborated_by) {
+			for (const ref of s.corroborated_by) {
+				if (ref === s.source_id) {
+					return `Source "${s.source_id}" lists itself in corroborated_by. A source cannot corroborate itself.`;
+				}
+				if (!ids.has(ref)) {
+					return `Source "${s.source_id}" is corroborated_by "${ref}", which is not present in the sources list. Corroborating sources must be enumerated.`;
+				}
+			}
+		}
+
+		// Rule 6: when a real user override exists, the emitted code must match it.
+		// Do not fail when user_overridden is set but no override exists. The model
+		// cannot see the user ratings for web sources, so it cannot verify the flag.
+		// Rule 4 below checks the override itself, so a false flag still cannot
+		// bypass the corroboration rule. Ignore the unverified flag instead.
+		if (s.user_overridden) {
+			const overrideCode = userOverrides ? findUserOverrideCode(s.source_id, userOverrides) : undefined;
+			if (overrideCode && s.admiralty_code && s.admiralty_code.toUpperCase() !== overrideCode.toUpperCase()) {
+				return `Source "${s.source_id}" is user_overridden to "${overrideCode}" but emitted code "${s.admiralty_code}". Use the user-supplied rating.`;
+			}
+		}
+
+		// Rule 4: credibility "1" (Confirmed) needs corroboration or a valid override.
+		if (s.credibility === "1") {
+			const hasCorroboration = (s.corroborated_by?.length ?? 0) >= 1;
+			const validOverride = Boolean(
+				s.user_overridden && userOverrides && findUserOverrideCode(s.source_id, userOverrides),
+			);
+			if (!hasCorroboration && !validOverride) {
+				return `Source "${s.source_id}" is rated credibility "1" (Confirmed) but lists no corroborating sources. Single-source reporting cannot be rated "1" without at least one independent corroborating source (list them in corroborated_by) or an explicit user override.`;
 			}
 		}
 	}

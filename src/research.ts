@@ -24,6 +24,15 @@ function resolveWebaioMcpBin(): string | undefined {
 	}
 }
 
+/** Return true when the pi-webaio MCP server binary resolves. This means the package is installed. */
+export function isWebaioInstalled(): boolean {
+	return resolveWebaioMcpBin() !== undefined;
+}
+
+/** Message to show when the command needs pi-webaio but it is not installed. */
+export const WEBAIO_INSTALL_HINT =
+	"pi-webaio is not installed, so live web research cannot run. Install it with `npm install pi-webaio` (or add it as an extension), then retry.";
+
 async function createMcpClient(
 	ctx?: ExtensionContext,
 	onUpdate?: (details: ResearchUpdateDetails) => void,

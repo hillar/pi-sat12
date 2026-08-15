@@ -107,7 +107,15 @@ export function extractCodeOutline(code: string, ext: string): string {
 		const line = lines[i];
 		const trimmed = line.trim();
 
-		if (trimmed.startsWith("") && trimmed.length > 2) inBlockComment = false;
+		if (trimmed.startsWith("/*") || trimmed.startsWith('"""') || trimmed.startsWith("'''")) {
+			outlineLines.push(line);
+			if (
+				!(trimmed.endsWith("*/") && trimmed.length > 2) &&
+				!(trimmed.endsWith('"""') && trimmed.length > 3) &&
+				!(trimmed.endsWith("'''") && trimmed.length > 3)
+			) {
+				inBlockComment = true;
+			}
 			continue;
 		}
 
@@ -120,7 +128,7 @@ export function extractCodeOutline(code: string, ext: string): string {
 		}
 
 		
-		if (trimmed.startsWith("
+		if (trimmed.startsWith("//") || trimmed.startsWith("#")) {
 			outlineLines.push(line);
 			continue;
 		}
@@ -146,7 +154,7 @@ export function extractCodeOutline(code: string, ext: string): string {
 
 	
 	if (outlineLines.length < 3 && lines.length > 0) {
-		return lines.slice(0, 50).join("\n") + (lines.length > 50 ? "\n
+		return lines.slice(0, 50).join("\n") + (lines.length > 50 ? "\n…[truncated]" : "");
 	}
 
 	return outlineLines.join("\n");

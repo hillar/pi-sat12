@@ -13,6 +13,51 @@ import type { AdversarialExchange } from "./adversarial.ts";
 import type { SynthesisOutput } from "./synthesis.ts";
 import type { AchOutput } from "./techniques/diagnostic/ach.ts";
 import { ALL_TECHNIQUES } from "./techniques/index.ts";
+import { RELIABILITY_LABELS, CREDIBILITY_LABELS, type SourceReliability, type InfoCredibility } from "./admiralty.ts";
+
+interface QualitySourceEntry {
+	source_id: string;
+	admiralty_code?: string;
+	reliability?: string;
+	credibility?: string;
+	rationale?: string;
+	corroborated_by?: string[];
+	user_overridden?: boolean;
+}
+
+/**
+ * Make the Admiralty source table from the Layer 0 quality technique.
+ * Return undefined when the result has no structured sources.
+ */
+function formatAdmiraltySourceTable(
+	techniqueResults: Record<string, TechniqueResult>,
+): string | undefined {
+	const quality = techniqueResults["quality"];
+	if (quality?.status !== "success") return undefined;
+	const sources = (quality.output as { sources?: QualitySourceEntry[] } | undefined)?.sources;
+	if (!Array.isArray(sources) || sources.length === 0) return undefined;
+
+	const rows = sources.map((s) => {
+		const code = s.admiralty_code || `${s.reliability ?? "?"}${s.credibility ?? "?"}`;
+		const relLabel = s.reliability ? RELIABILITY_LABELS[s.reliability as SourceReliability] ?? "" : "";
+		const credLabel = s.credibility ? CREDIBILITY_LABELS[s.credibility as InfoCredibility] ?? "" : "";
+		const label = [relLabel, credLabel].filter(Boolean).join(" / ");
+		const corr = s.corroborated_by && s.corroborated_by.length > 0 ? s.corroborated_by.join(", ") : "—";
+		const override = s.user_overridden ? " [user override]" : "";
+		const rationale = (s.rationale ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+		return `| ${s.source_id} | \`${code}\`${override} | ${label} | ${corr} | ${rationale} |`;
+	});
+
+	return [
+		"## Source Reliability Evaluation (Admiralty)",
+		"",
+		"Each source below was graded on the 2-axis Admiralty scale during the Quality of Information Check (Layer 0).",
+		"",
+		"| Source | Code | Reliability / Credibility | Corroborated By | Rationale |",
+		"|---|---|---|---|---|",
+		...rows,
+	].join("\n");
+}
 
 
 
@@ -449,7 +494,7 @@ async function writeEvidence(
 		"utf8",
 	);
 
-	const sourcesBody = webResources.length > 0
+	const webSourcesBody = webResources.length > 0
 		? [
 				"# Web Resources & Sources",
 				"",
@@ -458,6 +503,9 @@ async function writeEvidence(
 				...webResources.map((r) => `- **[${r.id ?? "Web"}]** [${r.title}](${r.url}) — ${r.url}`),
 			].join("\n")
 		: "# Web Resources & Sources\n\n_No external web sources gathered or research was skipped._";
+
+	const admiraltyTable = formatAdmiraltySourceTable(techniqueResults);
+	const sourcesBody = admiraltyTable ? `${webSourcesBody}\n\n${admiraltyTable}` : webSourcesBody;
 
 	await writeAtomicFile(
 		join(dir, "evidence", "sources.md"),

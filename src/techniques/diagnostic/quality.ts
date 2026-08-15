@@ -2,8 +2,8 @@
 
 import { Type, type Static } from "typebox";
 import { StringEnum } from "../../llm.ts";
-import type { TechniqueDefinition } from "../types.ts";
-import { validateAdmiraltySemantics, type InfoCredibility } from "../../admiralty.ts";
+import type { TechniqueDefinition, SemanticCheckContext } from "../types.ts";
+import { validateAdmiraltySemantics, type InfoCredibility, type SourceReliability } from "../../admiralty.ts";
 
 
 
@@ -21,7 +21,13 @@ export const QualityOutputSchema = Type.Object({
 				reliability: StringEnum(["A", "B", "C", "D", "E", "F"] as const),
 				credibility: StringEnum(["1", "2", "3", "4", "5", "6"] as const),
 				rationale: Type.String({ description: "Brief justification for this Admiralty grade" }),
-				user_overridden: Type.Optional(Type.Boolean({ description: "True if overridden by user" })),
+				corroborated_by: Type.Optional(
+					Type.Array(Type.String(), {
+						description:
+							"source_id values of OTHER sources in this list that independently report the same key information. Required to justify a credibility of '1'.",
+					}),
+				),
+				user_overridden: Type.Optional(Type.Boolean({ description: "True only if the user explicitly supplied a rating for this source" })),
 			}),
 		),
 	),
@@ -40,15 +46,35 @@ export const QualityOutputSchema = Type.Object({
 
 export type QualityOutput = Static<typeof QualityOutputSchema>;
 
-function checkQualitySemantics(data: unknown): string | null {
+/**
+ * Least evidence length that must hold real sources.
+ * Short evidence is often only a research-failure notice. An empty source list is
+ * a correct answer in that case, so do not fail it.
+ */
+const MIN_EVIDENCE_CHARS_FOR_SOURCES = 2000;
+
+function checkQualitySemantics(data: unknown, context?: SemanticCheckContext): string | null {
 	const d = data as QualityOutput;
-	if (d.sources && Array.isArray(d.sources)) {
+	const hasSources = Array.isArray(d.sources) && d.sources.length > 0;
+
+	// Require a source list only when the evidence is long enough to hold sources.
+	const evidenceLength =
+		context?.evidenceLength ?? (context?.hasEvidence ? MIN_EVIDENCE_CHARS_FOR_SOURCES : 0);
+	if (evidenceLength >= MIN_EVIDENCE_CHARS_FOR_SOURCES && !hasSources) {
+		return "The evidence contains identifiable sources but the 'sources' array is missing or empty. List every source that you can identify, each with an Admiralty rating.";
+	}
+
+	if (hasSources) {
 		return validateAdmiraltySemantics(
-			d.sources.map((s) => ({
+			d.sources!.map((s) => ({
 				source_id: s.source_id,
+				admiralty_code: s.admiralty_code,
+				reliability: s.reliability as SourceReliability | undefined,
 				credibility: s.credibility as InfoCredibility,
+				corroborated_by: s.corroborated_by,
 				user_overridden: s.user_overridden,
 			})),
+			{ userOverrides: context?.userOverrides },
 		);
 	}
 	return null;
@@ -95,11 +121,17 @@ Follow these steps from the Tradecraft Primer:
 
 ## Output Guidance
 
-Produce a JSON object with exactly these four fields:
+Produce a JSON object with these five fields:
 
-- **reliability**: Your overall verdict on evidence quality — "High", "Medium", or "Low".
-- **gaps**: Array of strings, each describing a critical information gap that limits confidence. Be specific about what is missing and why it matters.
-- **assessment**: A single narrative string covering: which sources are reliable and why, corroboration status of key claims, any signs of deception or manipulation, and how the overall evidence quality affects analytic confidence.
+- **reliability**: Your verdict on evidence quality. Use "High", "Medium", or "Low".
+- **sources**: An array of source grades. List every source that you can identify in the evidence. For each source give these fields:
+  - **source_id**: A stable id. Use the file path, URL, or [tag] from the evidence.
+  - **reliability** (A–F) and **credibility** (1–6). Also give **admiralty_code**. The code must equal the reliability letter and the credibility number together. Example: reliability "B" and credibility "2" make "B2".
+  - **rationale**: One line. State why you chose the grade.
+  - **corroborated_by**: The source_id values of OTHER sources in this list that report the same key information on their own. Use credibility "1" (Confirmed) only when you list at least one such source here. A single source cannot be "1".
+  - **user_overridden**: Set true only for a source that the user rated. Do not set it to avoid the corroboration rule.
+- **gaps**: An array of strings. Each string states one critical gap that limits confidence. State what is missing. State why it matters.
+- **assessment**: One narrative string. State which sources are reliable and why. State the corroboration of key claims. State any signs of deception or manipulation. State how the evidence quality changes analytic confidence.
 - **recommendations**: Array of strings, each a concrete recommendation for what additional evidence or collection would most reduce uncertainty.
 
 Be thorough but concise. Focus on quality issues that genuinely affect analytic confidence.`;

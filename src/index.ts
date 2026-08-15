@@ -3,21 +3,34 @@ import { join, isAbsolute } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import { sat12Analyze } from "./tools/sat12-analyze.ts";
 import { sat12StressTest } from "./tools/sat12-stress-test.ts";
+import { sat12Eval } from "./tools/sat12-eval.ts";
 import { resolveModel } from "./llm.ts";
 import { setSat12Setting, loadSat12Config } from "./config.ts";
 import { renderReport } from "./report/render.ts";
-import { findLatestSession, saveSession, formatSessionStatus } from "./session.ts";
-import { gatherResearch } from "./research.ts";
+import { findLatestSession, saveSession, formatSessionStatus, loadSession, createInitialSession } from "./session.ts";
+import { gatherResearch, isWebaioInstalled, WEBAIO_INSTALL_HINT } from "./research.ts";
 import { updateWorkspaceIndex } from "./okf.ts";
+import { resolveAdversarialModels, UsageAccumulator } from "./llm.ts";
+import { runSingleTechnique } from "./techniques/runner.ts";
+import { qualityTechnique, type QualityOutput } from "./techniques/diagnostic/quality.ts";
+import { RELIABILITY_LABELS, CREDIBILITY_LABELS, type SourceReliability, type InfoCredibility } from "./admiralty.ts";
 
 export function parseCommandArgs(input: string): {
 	question: string;
 	evidenceDir?: string;
 	sourceRatings?: Record<string, string>;
+	noQuality?: boolean;
 } {
 	let text = input.trim();
 	let evidenceDir: string | undefined;
 	const sourceRatings: Record<string, string> = {};
+
+	let noQuality = false;
+	const noQualityMatch = text.match(/\s*--no-quality\b/i);
+	if (noQualityMatch) {
+		noQuality = true;
+		text = text.replace(noQualityMatch[0], "").trim();
+	}
 
 
 	const dirRatingMatch = text.match(/\s+--dir-rating(?:=|\s+)("?[A-F][1-6]"?|\'?[A-F][1-6]\'?)/i);
@@ -45,6 +58,13 @@ export function parseCommandArgs(input: string): {
 		text = text.replace(dirFlagMatch[0], "").trim();
 	} else {
 
+		// TODO(future): SAT-12 reads `@<path>` here as a read-only evidence_dir.
+		// The general assistant can read the same `@path` in a plain message as an
+		// instruction to edit the file. This is outside any /sat12 command.
+		// One research request changed source code this way.
+		// Add a guard. Do not treat an `@path` as an edit instruction.
+		// Treat it as an edit instruction only when the user asks for changes.
+		// This is a separate general-agent task.
 		const atMatch = text.match(/\s+@("[^"]+"|\'[^\']+\'|\S+)/);
 		if (atMatch) {
 			evidenceDir = atMatch[1].replace(/^["']|["']$/g, "");
@@ -63,6 +83,7 @@ export function parseCommandArgs(input: string): {
 		question: text,
 		evidenceDir,
 		sourceRatings: Object.keys(sourceRatings).length > 0 ? sourceRatings : undefined,
+		noQuality: noQuality || undefined,
 	};
 }
 
@@ -73,13 +94,14 @@ Structured Analysis of 12-Technique Intelligence Pipeline
 
 ### Slash Commands
 - \`/sat12 <question> [@directory|--dir <path>] [--dir-rating <A1-F6>]\` — Start new 12-technique analysis with optional local folder evidence & folder Admiralty rank
-- \`/sat12_research <question>\` (or \`/sat12 research <q>\`) — Gather standalone web research via pi-webaio
+- \`/sat12_research <question> [@dir] [--source-rating path=A1] [--no-quality]\` (or \`/sat12 research <q>\`) — Gather standalone web research via pi-webaio, run the Layer 0 Quality of Information Check, and seed a resumable session (pass \`--no-quality\` for a raw evidence dump with no LLM call)
 - \`/sat12_status\` (or \`/sat12 status\`) — View active or latest session status & progress
 - \`/sat12_stop\` (or \`/sat12 stop\`) — Pause running session & save checkpoint
 - \`/sat12_continue\` (or \`/sat12 continue\`) — Resume paused or interrupted session
 - \`/sat12_cancel\` (or \`/sat12 cancel\`) — Cancel active session (abandon)
 - \`/sat12_set [key] [value]\` — View or set persistent model & pipeline settings
 - \`/sat12_report [dir]\` — Re-render HTML executive report from an OKF bundle
+- \`/sat12_eval [n] [fixture-ids]\` (or \`/sat12 eval\`) — Measure the quality prompt pass rate against evidence fixtures
 - \`/sat12_help\` (or \`/sat12 --help\` | \`-h\` | \`-?\` | \`help\`) — Display this help reference
 
 ### Source Evaluation & Admiralty Ratings
@@ -150,35 +172,82 @@ SAT12 automatically assigns 2-axis Admiralty ratings (A1 to F6) to all evidence 
 - \`rerun_technique\` (string, optional): Invalidate & re-run a single technique (e.g. \`quality\`, \`ach\`, \`red_team\`)`;
 }
 
+export function renderQualityBlock(q: QualityOutput): string {
+	const lines: string[] = ["", "## Layer 0 — Quality of Information Check", "", `**Overall Reliability:** ${q.reliability}`, ""];
+
+	if (q.sources && q.sources.length > 0) {
+		lines.push("### Source Reliability (Admiralty)", "");
+		lines.push("| Source | Code | Reliability / Credibility | Corroborated By | Rationale |");
+		lines.push("|---|---|---|---|---|");
+		for (const s of q.sources) {
+			const code = s.admiralty_code || `${s.reliability ?? "?"}${s.credibility ?? "?"}`;
+			const relLabel = s.reliability ? RELIABILITY_LABELS[s.reliability as SourceReliability] ?? "" : "";
+			const credLabel = s.credibility ? CREDIBILITY_LABELS[s.credibility as InfoCredibility] ?? "" : "";
+			const label = [relLabel, credLabel].filter(Boolean).join(" / ");
+			const corr = s.corroborated_by && s.corroborated_by.length > 0 ? s.corroborated_by.join(", ") : "—";
+			const override = s.user_overridden ? " [user override]" : "";
+			const rationale = (s.rationale ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+			lines.push(`| ${s.source_id} | \`${code}\`${override} | ${label} | ${corr} | ${rationale} |`);
+		}
+		lines.push("");
+	}
+
+	if (q.gaps && q.gaps.length > 0) {
+		lines.push("### Intelligence Gaps", "", ...q.gaps.map((g) => `- ${g}`), "");
+	}
+	if (q.assessment) {
+		lines.push("### Assessment", "", q.assessment, "");
+	}
+	if (q.recommendations && q.recommendations.length > 0) {
+		lines.push("### Collection Recommendations", "", ...q.recommendations.map((r) => `- ${r}`), "");
+	}
+
+	return lines.join("\n");
+}
+
 export default function (pi: ExtensionAPI): void {
 	pi.registerTool(sat12Analyze);
 	pi.registerTool(sat12StressTest);
+	pi.registerTool(sat12Eval);
+
+	// Stop the active analysis when the session shuts down.
+	pi.on("session_shutdown", () => {
+		const controller = activeSat12Controller;
+		activeSat12Controller = undefined;
+		controller?.abort();
+	});
+
+	// Clear the extension widgets when the session starts or reloads.
+	pi.on("session_start", (_event, ctx) => {
+		ctx.ui.setWidget("sat12-help", undefined);
+		ctx.ui.setWidget("sat12-status", undefined);
+		ctx.ui.setWidget("sat12-quality", undefined);
+		ctx.ui.setWidget("sat12-research", undefined);
+		ctx.ui.setWidget("sat12-report", undefined);
+	});
 
 	let activeSat12Controller: AbortController | undefined;
 
-	const handleHelpCommand = async (_args: string, ctx: ExtensionCommandContext) => {
-		const helpText = formatSat12Help();
-		console.log("\n" + helpText + "\n");
+	const handleHelpCommand = async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
+		ctx.ui.setWidget("sat12-help", formatSat12Help().split("\n"));
 		ctx.ui.notify("Displayed SAT-12 help reference", "info");
 	};
 
-	const handleStatusCommand = async (_args: string, ctx: ExtensionCommandContext) => {
+	const handleStatusCommand = async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const cwd = ctx.cwd || process.cwd();
 		const session = await findLatestSession(cwd);
 		if (!session) {
 			ctx.ui.notify("No SAT-12 session found in current workspace", "warning");
-			console.log("\nNo SAT-12 session found in current workspace.\n");
 			return;
 		}
-		const statusText = formatSessionStatus(session);
-		console.log("\n" + statusText + "\n");
+		ctx.ui.setWidget("sat12-status", formatSessionStatus(session).split("\n"));
 		ctx.ui.notify(
 			`SAT-12 Status: ${session.status.toUpperCase()} (${Object.keys(session.techniqueResults || {}).length}/12 techniques)`,
 			"info",
 		);
 	};
 
-	const handleCancelCommand = async (_args: string, ctx: ExtensionCommandContext) => {
+	const handleCancelCommand = async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const cwd = ctx.cwd || process.cwd();
 		const session = await findLatestSession(cwd);
 		if (session && session.status === "in_progress") {
@@ -193,16 +262,29 @@ export default function (pi: ExtensionAPI): void {
 		ctx.ui.notify("Cancelled active SAT-12 session (abandoned)", "info");
 	};
 
-	const handleResearchCommand = async (args: string, ctx: ExtensionCommandContext) => {
-		const question = args.trim();
+	const handleResearchCommand = async (
+		args: string | ReturnType<typeof parseCommandArgs>,
+		ctx: ExtensionCommandContext,
+	): Promise<void> => {
+		const parsed = typeof args === "string" ? parseCommandArgs(args) : args;
+		const question = parsed.question.trim();
 		if (!question) {
-			ctx.ui.notify("Usage: /sat12_research <question>", "warning");
+			ctx.ui.notify("Usage: /sat12_research <question> [@dir] [--source-rating path=A1] [--no-quality]", "warning");
+			return;
+		}
+
+		// Stop and show an install instruction. /sat12_research runs live web research.
+		// Live web research needs pi-webaio. Do not continue without it.
+		if (!isWebaioInstalled()) {
+			ctx.ui.notify(WEBAIO_INSTALL_HINT, "error");
+			ctx.ui.setWidget("sat12-research", WEBAIO_INSTALL_HINT.split("\n"));
 			return;
 		}
 
 		ctx.ui.notify(`Gathering web research via pi-webaio for: "${question}"`, "info");
+		activeSat12Controller = new AbortController();
+		const controller = activeSat12Controller;
 		try {
-			const controller = new AbortController();
 			const evidenceText = await gatherResearch(
 				question,
 				controller.signal,
@@ -217,25 +299,153 @@ export default function (pi: ExtensionAPI): void {
 						ctx.ui.notify(`Research skipped: ${update.reason}`, "info");
 					}
 				},
-				ctx as any,
+				ctx,
+				parsed.evidenceDir,
+				parsed.sourceRatings,
 			);
 
 			if (!evidenceText) {
 				ctx.ui.notify("No research evidence gathered or pi-webaio unavailable", "warning");
-				console.log("\nNo research evidence gathered or pi-webaio unavailable.\n");
 				return;
 			}
 
-			console.log("\n--- GATHERED RESEARCH EVIDENCE ---\n");
-			console.log(evidenceText);
-			console.log("\n----------------------------------\n");
-			ctx.ui.notify("Web research complete. Output displayed in console.", "info");
+			ctx.ui.setWidget("sat12-research", [
+				"--- GATHERED RESEARCH EVIDENCE ---",
+				...evidenceText.split("\n"),
+				"----------------------------------",
+			]);
+
+			// Run the Layer 0 Quality of Information Check. It runs by default.
+			// Use --no-quality to skip it.
+			if (parsed.noQuality) {
+				ctx.ui.notify("Web research complete (quality check skipped).", "info");
+				return;
+			}
+
+			const cwd = ctx.cwd || process.cwd();
+			const existing = await loadSession(cwd, question);
+			if (existing && existing.status === "completed" && existing.outputPath) {
+				ctx.ui.notify(`Existing completed bundle: ${existing.outputPath}`, "info");
+				return;
+			}
+
+			const advResolution = resolveAdversarialModels(ctx, { adversarial_enabled: false });
+			if (advResolution.error || !advResolution.primaryModel) {
+				ctx.ui.notify(
+					`Research gathered, but quality check skipped: ${advResolution.error || "no model available"}`,
+					"warning",
+				);
+				return;
+			}
+
+			ctx.ui.notify("Running Layer 0 Quality of Information Check...", "info");
+			const usage = new UsageAccumulator();
+			let qualityResult;
+			try {
+				qualityResult = await runSingleTechnique(
+					qualityTechnique,
+					question,
+					evidenceText,
+					ctx,
+					advResolution.primaryModel,
+					controller.signal,
+					undefined,
+					usage,
+					{ userOverrides: parsed.sourceRatings },
+				);
+			} catch (err: any) {
+				if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
+					ctx.ui.notify("Research/quality check cancelled.", "info");
+					return;
+				}
+				ctx.ui.notify(`Quality check failed: ${err?.message || err}. Research output preserved above.`, "warning");
+				return;
+			}
+
+			if (qualityResult.status !== "success") {
+				ctx.ui.notify(`Quality check did not complete: ${qualityResult.error ?? "unknown"}.`, "warning");
+				return;
+			}
+
+			ctx.ui.setWidget("sat12-quality", renderQualityBlock(qualityResult.output as QualityOutput).split("\n"));
+
+			// Save the session. A later /sat12 run uses this evidence and the Layer 0 result.
+			const session = existing ?? createInitialSession(question);
+			session.evidenceText = evidenceText;
+			session.evidenceGatheredAt = new Date().toISOString();
+			session.techniqueResults.quality = qualityResult;
+			session.status = "paused";
+			session.statusReason = "Research + Layer 0 complete; full pipeline not started";
+			await saveSession(cwd, session);
+
+			ctx.ui.setWidget("sat12-research", [
+				`> Session seeded. Run /sat12_continue (or /sat12 ${question}) to run the full 12-technique pipeline.`,
+			]);
+			ctx.ui.notify("Web research + Layer 0 quality check complete. Session seeded.", "info");
 		} catch (err: any) {
-			ctx.ui.notify(`Research failed: ${err?.message || err}`, "error");
+			if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
+				ctx.ui.notify("Research cancelled.", "info");
+			} else {
+				ctx.ui.notify(`Research failed: ${err?.message || err}`, "error");
+			}
+		} finally {
+			if (activeSat12Controller === controller) {
+				activeSat12Controller = undefined;
+			}
 		}
 	};
 
-	const handleCommand = async (args: string, ctx: ExtensionCommandContext) => {
+	const handleEvalCommand = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+		const parts = args.trim().split(/\s+/).filter(Boolean);
+		let n = 10;
+		let fixtures: string | undefined;
+		let results_dir: string | undefined;
+
+		for (const part of parts) {
+			const asNumber = Number(part);
+			if (Number.isInteger(asNumber) && asNumber > 0) {
+				n = asNumber;
+			} else if (part.startsWith("results_dir=") || part.startsWith("dir=")) {
+				results_dir = part.split("=")[1].replace(/^["']|["']$/g, "");
+			} else {
+				fixtures = part;
+			}
+		}
+
+		ctx.ui.notify(`Running SAT-12 prompt eval: ${n} runs for each fixture...`, "info");
+		activeSat12Controller = new AbortController();
+		const controller = activeSat12Controller;
+		try {
+			const result = await sat12Eval.execute(
+				`cmd:${Date.now()}`,
+				{ n, fixtures, results_dir },
+				controller.signal,
+				(update: any) => {
+					if (update.content?.[0]?.text) {
+						console.log(update.content[0].text);
+						ctx.ui.notify(update.content[0].text, "info");
+					}
+				},
+				ctx,
+			);
+			if (result.content?.[0]?.type === "text") {
+				ctx.ui.setWidget("sat12-eval", result.content[0].text.split("\n"));
+			}
+			ctx.ui.notify("SAT-12 prompt eval complete.", "info");
+		} catch (err: any) {
+			if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
+				ctx.ui.notify("SAT-12 prompt eval cancelled.", "info");
+			} else {
+				ctx.ui.notify(`SAT-12 prompt eval failed: ${err?.message || err}`, "error");
+			}
+		} finally {
+			if (activeSat12Controller === controller) {
+				activeSat12Controller = undefined;
+			}
+		}
+	};
+
+	const handleCommand = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const parsed = parseCommandArgs(args);
 		const question = parsed.question;
 		const lower = question.toLowerCase();
@@ -255,9 +465,15 @@ export default function (pi: ExtensionAPI): void {
 		if (lower === "continue") {
 			return handleContinueCommand(args, ctx);
 		}
+		if (lower.startsWith("eval ") || lower === "eval") {
+			return handleEvalCommand(question.replace(/^eval\s*/i, ""), ctx);
+		}
 		if (lower.startsWith("research ") || lower === "research") {
-			const query = question.replace(/^research\s*/i, "");
-			return handleResearchCommand(query, ctx);
+			// Use the flags that are already parsed. Remove only the "research" verb from the question.
+			return handleResearchCommand(
+				{ ...parsed, question: question.replace(/^research\s*/i, "") },
+				ctx,
+			);
 		}
 
 		if (!question) {
@@ -289,15 +505,12 @@ export default function (pi: ExtensionAPI): void {
 						ctx.ui.notify(update.details.message);
 					}
 				},
-				ctx as any,
+				ctx,
 			);
 
 			if (result.content?.[0]?.type === "text") {
-				const reportText = result.content[0].text;
-				console.log("\n" + reportText + "\n");
-				if (typeof ctx.ui?.notify === "function") {
-					ctx.ui.notify("SAT-12 analysis complete");
-				}
+				ctx.ui.setWidget("sat12-report", result.content[0].text.split("\n"));
+				ctx.ui.notify("SAT-12 analysis complete");
 			}
 		} catch (err: any) {
 			if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
@@ -310,7 +523,7 @@ export default function (pi: ExtensionAPI): void {
 		}
 	};
 
-	const handleSetCommand = async (args: string, ctx: ExtensionCommandContext) => {
+	const handleSetCommand = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const parts = args.trim().split(/\s+/).filter(Boolean);
 
 		const validKeys = [
@@ -341,8 +554,8 @@ export default function (pi: ExtensionAPI): void {
 
 
 			if (k === "primary" || k === "primary_model" || k === "challenger" || k === "challenger_model" || k === "investigator" || k === "investigator_model") {
-				const resolution = resolveModel(ctx as any, val);
-				if (resolution.error) {
+				const resolution = resolveModel(ctx, val);
+				if (!resolution.model) {
 					ctx.ui.notify(resolution.error, "error");
 					return;
 				}
@@ -387,9 +600,10 @@ export default function (pi: ExtensionAPI): void {
 			key = selectedKey.split(" ")[0];
 		}
 
-		const isModelKey = ["primary", "primary_model", "challenger", "challenger_model", "investigator", "investigator_model"].includes(key);
-		const isBoolKey = ["adversarial_enabled", "research_enabled", "gap_resolution_enabled"].includes(key);
-		const isEnumKey = key === "adversarial_mode";
+		const settingKey: string = key;
+		const isModelKey = ["primary", "primary_model", "challenger", "challenger_model", "investigator", "investigator_model"].includes(settingKey);
+		const isBoolKey = ["adversarial_enabled", "research_enabled", "gap_resolution_enabled"].includes(settingKey);
+		const isEnumKey = settingKey === "adversarial_mode";
 
 		let valToSet: string | undefined;
 
@@ -400,24 +614,24 @@ export default function (pi: ExtensionAPI): void {
 				return;
 			}
 			const choices = availableModels.map((m) => `${m.provider}/${m.id}`);
-			valToSet = await ctx.ui.select(`Select model for ${key}:`, choices);
+			valToSet = await ctx.ui.select(`Select model for ${settingKey}:`, choices);
 		} else if (isBoolKey) {
-			valToSet = await ctx.ui.select(`Set ${key}:`, ["true", "false"]);
+			valToSet = await ctx.ui.select(`Set ${settingKey}:`, ["true", "false"]);
 		} else if (isEnumKey) {
-			valToSet = await ctx.ui.select(`Set ${key}:`, ["dual", "trident"]);
+			valToSet = await ctx.ui.select(`Set ${settingKey}:`, ["dual", "trident"]);
 		}
 
 		if (!valToSet) return;
 
 		try {
-			const res = await setSat12Setting(key, valToSet);
+			const res = await setSat12Setting(settingKey, valToSet);
 			ctx.ui.notify(`Set ${res.normalizedKey} = '${res.normalizedValue}'`, "info");
 		} catch (err: any) {
 			ctx.ui.notify(`Failed to set config: ${err?.message || err}`, "error");
 		}
 	};
 
-	const handleReportCommand = async (args: string, ctx: ExtensionCommandContext) => {
+	const handleReportCommand = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		let targetDir = args.trim();
 		const cwd = ctx.cwd || process.cwd();
 
@@ -451,7 +665,7 @@ export default function (pi: ExtensionAPI): void {
 		}
 	};
 
-	const handleStopCommand = async (_args: string, ctx: ExtensionCommandContext) => {
+	const handleStopCommand = async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const cwd = ctx.cwd || process.cwd();
 		const session = await findLatestSession(cwd);
 		if (session && session.status === "in_progress") {
@@ -466,7 +680,7 @@ export default function (pi: ExtensionAPI): void {
 		ctx.ui.notify("Paused active SAT-12 analysis. Progress saved. Run /sat12_continue to resume.", "info");
 	};
 
-	const handleContinueCommand = async (args: string, ctx: ExtensionCommandContext) => {
+	const handleContinueCommand = async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 		const cwd = ctx.cwd || process.cwd();
 		const session = await findLatestSession(cwd);
 
@@ -501,15 +715,12 @@ export default function (pi: ExtensionAPI): void {
 						ctx.ui.notify(update.details.message);
 					}
 				},
-				ctx as any,
+				ctx,
 			);
 
 			if (result.content?.[0]?.type === "text") {
-				const reportText = result.content[0].text;
-				console.log("\n" + reportText + "\n");
-				if (typeof ctx.ui?.notify === "function") {
-					ctx.ui.notify("SAT-12 analysis complete");
-				}
+				ctx.ui.setWidget("sat12-report", result.content[0].text.split("\n"));
+				ctx.ui.notify("SAT-12 analysis complete");
 			}
 		} catch (err: any) {
 			if (err?.name === "AbortError" || err?.message?.includes("aborted")) {
@@ -550,6 +761,11 @@ export default function (pi: ExtensionAPI): void {
 	pi.registerCommand("sat12_research", {
 		description: "Gather standalone web research via pi-webaio MCP server",
 		handler: handleResearchCommand,
+	});
+
+	pi.registerCommand("sat12_eval", {
+		description: "Measure the quality prompt pass rate against evidence fixtures",
+		handler: handleEvalCommand,
 	});
 
 	pi.registerCommand("sat12_status", {

@@ -1,5 +1,5 @@
 import { Type, type Static } from "typebox";
-import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
+import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "../llm.ts";
 import { resolveModel, resolveAdversarialModels, UsageAccumulator, checkAborted, isAbortError } from "../llm.ts";
@@ -14,6 +14,7 @@ import {
 	loadSession,
 	saveSession,
 	createInitialSession,
+	EVIDENCE_MAX_AGE_MS,
 	type SessionState,
 } from "../session.ts";
 import { loadSat12Config } from "../config.ts";
@@ -126,7 +127,9 @@ export type ProgressDetails =
 	| { phase: "technique"; techniqueId?: string; techniqueName?: string; layer?: number; layerName?: string; totalLayers?: number; status: string; error?: string; durationMs?: number; message?: string }
 	| { phase: "adversarial"; techniqueId: string; step: string; round: number; error?: string; message?: string }
 	| { phase: "synthesis"; status: string; error?: string; message?: string }
-	| { phase: "writing"; status: string; path?: string; message?: string };
+	| { phase: "writing"; status: string; path?: string; message?: string }
+	| { phase: "paused"; status: string; message?: string }
+	| { phase: "cancelled"; status: string; message?: string };
 
 function formatProgressMessage(d: any): string {
 	if (d.message) return d.message;
@@ -242,7 +245,7 @@ Parameters:
 
 ### Available Slash Commands
 - \`/sat12 <question>\` — Execute SAT-12 analysis on a question
-- \`/sat12_research <question>\` — Gather standalone web research via pi-webaio
+- \`/sat12_research <question> [@dir] [--no-quality]\` — Gather web research, run Layer 0 Quality of Information Check, and seed a resumable session
 - \`/sat12_status\` — View current or latest session status & progress
 - \`/sat12_stop\` — Pause running session & save checkpoint
 - \`/sat12_continue\` — Resume paused or interrupted session
@@ -374,6 +377,30 @@ export const sat12Analyze = {
 		try {
 			
 			const researchStart = Date.now();
+
+			// Drop stale saved evidence and its Layer 0 quality result. A fresh full run
+			// then gathers evidence again. Apply this only to a bare seed.
+			// Do not apply it to a run that stopped part way. Keep that finished work.
+			if (
+				researchEnabled &&
+				!params.evidence &&
+				session.evidenceText &&
+				session.evidenceGatheredAt
+			) {
+				const age = Date.now() - new Date(session.evidenceGatheredAt).getTime();
+				const techniqueIds = Object.keys(session.techniqueResults);
+				const isBareSeed =
+					!session.synthesis &&
+					!session.outputPath &&
+					techniqueIds.every((id) => id === "quality");
+				if (age > EVIDENCE_MAX_AGE_MS && isBareSeed) {
+					session.evidenceText = undefined;
+					session.evidenceGatheredAt = undefined;
+					delete session.techniqueResults.quality;
+					await saveSession(ctx.cwd, session);
+				}
+			}
+
 			let evidenceText = session.evidenceText || params.evidence;
 			if (researchEnabled && !evidenceText) {
 				const gathered = await gatherResearch(
@@ -387,17 +414,28 @@ export const sat12Analyze = {
 				if (gathered) {
 					evidenceText = gathered;
 					session.evidenceText = evidenceText;
+					session.evidenceGatheredAt = new Date().toISOString();
 					await saveSession(ctx.cwd, session);
 				}
 			}
 
 			
 			if (gapResolutionEnabled && researchEnabled && evidenceText && !evidenceText.includes("## Gap Resolution Findings")) {
-				
-				const gapMatches = evidenceText.match(/## Gaps[\s\S]*?(?=\n## |$)/i);
-				const initialGaps = gapMatches
-					? gapMatches[0].split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim())
-					: [`Primary technical data and verified metrics for ${params.question}`];
+				// Use structured gaps from a saved or finished Layer 0 quality result first.
+				// If none exist, read the gaps from the evidence markdown.
+				// If that also fails, use one generic gap.
+				const qualityGaps = (session.techniqueResults.quality?.status === "success"
+					? (session.techniqueResults.quality.output as { gaps?: unknown } | undefined)?.gaps
+					: undefined);
+				let initialGaps: string[];
+				if (Array.isArray(qualityGaps) && qualityGaps.length > 0) {
+					initialGaps = qualityGaps.filter((g): g is string => typeof g === "string" && g.trim().length > 0);
+				} else {
+					const gapMatches = evidenceText.match(/## Gaps[\s\S]*?(?=\n## |$)/i);
+					initialGaps = gapMatches
+						? gapMatches[0].split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim())
+						: [`Primary technical data and verified metrics for ${params.question}`];
+				}
 
 				if (initialGaps.length > 0) {
 					const gapFindings = await resolveGaps(
@@ -436,6 +474,7 @@ export const sat12Analyze = {
 						session!.techniqueResults[id] = res as any;
 						saveSession(ctx.cwd, session!);
 					},
+					{ userOverrides: params.source_ratings },
 				);
 				session.techniqueResults = techniqueResults as any;
 				await saveSession(ctx.cwd, session);
@@ -604,7 +643,11 @@ export const sat12Analyze = {
 			};
 		} catch (err) {
 			if (isAbortError(err) || signal?.aborted || ctx?.signal?.aborted) {
-				const isPause = session.status === "paused";
+				// /sat12_stop writes "paused" to its own copy on disk. This function
+				// holds a different copy in memory, so re-read the file to learn
+				// whether the user paused or cancelled.
+				const onDisk = await loadSession(ctx.cwd, params.question, params.session_id);
+				const isPause = onDisk?.status === "paused";
 				session.status = isPause ? "paused" : "cancelled";
 				await saveSession(ctx.cwd, session);
 
