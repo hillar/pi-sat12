@@ -2,7 +2,7 @@ import { Type, type Static } from "typebox";
 import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-coding-agent";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "../llm.ts";
-import { resolveModel, resolveAdversarialModels, UsageAccumulator, checkAborted, isAbortError } from "../llm.ts";
+import { resolveAdversarialModels, UsageAccumulator, checkAborted, isAbortError } from "../llm.ts";
 import { gatherResearch } from "../research.ts";
 import { resolveGaps } from "../gap_resolution.ts";
 import { runTechniqueLayers } from "../techniques/runner.ts";

@@ -1,6 +1,6 @@
 
 
-import { readFile, rm, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createRequire } from "node:module";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";

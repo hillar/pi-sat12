@@ -5,7 +5,7 @@ import { sat12Analyze } from "./tools/sat12-analyze.ts";
 import { sat12StressTest } from "./tools/sat12-stress-test.ts";
 import { sat12Eval } from "./tools/sat12-eval.ts";
 import { resolveModel } from "./llm.ts";
-import { setSat12Setting, loadSat12Config } from "./config.ts";
+import { setSat12Setting } from "./config.ts";
 import { renderReport } from "./report/render.ts";
 import { findLatestSession, saveSession, formatSessionStatus, loadSession, createInitialSession } from "./session.ts";
 import { gatherResearch, isWebaioInstalled, WEBAIO_INSTALL_HINT } from "./research.ts";

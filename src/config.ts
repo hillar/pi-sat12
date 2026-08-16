@@ -90,11 +90,3 @@ export async function setSat12Setting(
 
 	throw new Error(`Unknown setting key '${key}'`);
 }
-
-export async function setSat12Model(
-	role: "primary" | "challenger" | "investigator",
-	modelId: string,
-): Promise<Sat12Config> {
-	const res = await setSat12Setting(role, modelId);
-	return res.config;
-}
