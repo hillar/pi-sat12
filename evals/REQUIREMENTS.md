@@ -41,6 +41,9 @@ Use the requirement ID in the change message when you change code.
 | REQ-EV-11 | The executive report renderer transforms markdown safely to HTML. | `evals/render.test.ts` | none |
 | REQ-EV-12 | TypeBox schemas validate synthesis and quality outputs correctly. | `evals/schema.test.ts` | none |
 | REQ-EV-13 | The settings writer parses keys and persists settings under the user config directory. | `evals/config.test.ts` | none |
+| REQ-EV-14 | Code outline extraction and local file scanning behave per spec across language types. | `evals/local-evidence.test.ts` | none |
+| REQ-EV-15 | Local directory evidence produces ranked passages, code outlines, and Admiralty headers. | `evals/local-evidence.test.ts` | none |
+| REQ-EV-16 | Prior workspace intelligence and research notices format properly. | `evals/local-evidence.test.ts` | none |
 
 ## Synthesis summary
 
