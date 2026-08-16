@@ -78,3 +78,24 @@ test("the Admiralty rules still run through the quality check", () => {
 	assert.notEqual(result, null, "expected a failure, got pass");
 	assert.match(result as string, /Duplicate source_id/);
 });
+
+test("assessment with excessive STE violations fails", () => {
+	const badOutput = {
+		...output([oneSource]),
+		assessment: "The evidence pipeline is robust; it sets a cutover date.", // slop + semicolon = 2 > budget 1
+	};
+	const result = check(badOutput, { hasEvidence: true, evidenceLength: LONG });
+	assert.notEqual(result, null, "expected STE failure for assessment");
+	assert.match(result as string, /^the assessment has 2 STE style violation/);
+});
+
+test("source rationale with excessive STE violations fails", () => {
+	const badSource = {
+		...oneSource,
+		rationale: "The document is robust; it sets a clear baseline.", // slop + semicolon = 2 > budget 1
+	};
+	const badOutput = output([badSource]);
+	const result = check(badOutput, { hasEvidence: true, evidenceLength: LONG });
+	assert.notEqual(result, null, "expected STE failure for rationale");
+	assert.match(result as string, /^the rationale for source 'docs\/a\.md' has 2 STE style violation/);
+});

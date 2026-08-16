@@ -4,6 +4,7 @@ import { Type, type Static } from "typebox";
 import { StringEnum } from "../../llm.ts";
 import type { TechniqueDefinition, SemanticCheckContext } from "../types.ts";
 import { validateAdmiraltySemantics, type InfoCredibility, type SourceReliability } from "../../admiralty.ts";
+import { lintSummary } from "../../../evals/vendor/ste_lint.mjs";
 
 
 
@@ -69,7 +70,7 @@ function checkQualitySemantics(data: unknown, context?: SemanticCheckContext): s
 
 	if (hasSources) {
 		// REQ-Q-4: The quality check must run the Admiralty rules on the emitted sources.
-		return validateAdmiraltySemantics(
+		const admErr = validateAdmiraltySemantics(
 			d.sources!.map((s) => ({
 				source_id: s.source_id,
 				admiralty_code: s.admiralty_code,
@@ -80,7 +81,24 @@ function checkQualitySemantics(data: unknown, context?: SemanticCheckContext): s
 			})),
 			{ userOverrides: context?.userOverrides },
 		);
+		if (admErr) return admErr;
 	}
+
+	// REQ-Q-5: The assessment and each rationale allow no more than 1 blocking STE violation per field.
+	if (d.assessment) {
+		const steErr = lintSummary(d.assessment, 1, "the assessment");
+		if (steErr) return steErr;
+	}
+
+	if (hasSources) {
+		for (const s of d.sources!) {
+			if (s.rationale) {
+				const steErr = lintSummary(s.rationale, 1, `the rationale for source '${s.source_id}'`);
+				if (steErr) return steErr;
+			}
+		}
+	}
+
 	return null;
 }
 

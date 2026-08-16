@@ -51,3 +51,10 @@ test("lintSummary rejects summaries exceeding the blocking violation budget", ()
 	assert.notEqual(err, null, "expected rejection for 2 blocking violations");
 	assert.match(err as string, /bottom_line_assessment has 2 STE style violation/);
 });
+
+test("lintSummary accepts a custom label for error messages", () => {
+	const badText = "The migration plan is robust; it sets a cutover date.";
+	const err = lintSummary(badText, 1, "the assessment");
+	assert.notEqual(err, null, "expected rejection for custom label");
+	assert.match(err as string, /^the assessment has 2 STE style violation/);
+});

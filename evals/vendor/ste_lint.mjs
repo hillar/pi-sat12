@@ -116,7 +116,7 @@ export const SUMMARY_BLOCKING = [
 	"synonym_rotation",
 ];
 
-export function lintSummary(text, budget = 1) {
+export function lintSummary(text, budget = 1, label = "the bottom_line_assessment") {
 	if (!text || typeof text !== "string") return null;
 	const res = lint(text, "procedural");
 	const activeCounts = SUMMARY_BLOCKING.map((k) => ({
@@ -129,8 +129,8 @@ export function lintSummary(text, budget = 1) {
 
 	const breakdown = activeCounts.map((v) => `${v.key}=${v.count}`).join(", ");
 	return (
-		`The bottom_line_assessment has ${totalBlocking} STE style violation(s) (${breakdown}). ` +
-		`The maximum allowed budget is ${budget}. Rewrite the bottom_line_assessment to use short sentences (<=20 words), ` +
+		`${label} has ${totalBlocking} STE style violation(s) (${breakdown}). ` +
+		`The maximum allowed budget is ${budget}. Rewrite ${label} to use short sentences (<=20 words), ` +
 		`no contractions, no latin abbreviations (e.g./i.e./etc), no semicolons, no buzzwords/slop, and consistent terminology.`
 	);
 }

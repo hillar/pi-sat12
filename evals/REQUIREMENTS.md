@@ -22,6 +22,7 @@ Use the requirement ID in the change message when you change code.
 | REQ-Q-2 | Short or missing evidence must not force a sources list. | `short notice-only evidence does not require sources`, `no evidence does not require sources` | notice_only |
 | REQ-Q-3 | A context with only `hasEvidence` keeps the strict rule. | `a context without evidenceLength keeps the strict rule` | none |
 | REQ-Q-4 | The quality check must run the Admiralty rules on the emitted sources. | `the Admiralty rules still run through the quality check` | all fixtures |
+| REQ-Q-5 | The quality field `assessment` and each source `rationale` allow no more than 1 blocking STE violation per field; modals and perfect tense are allowed. | `assessment with excessive STE violations fails`, `source rationale with excessive STE violations fails` | none |
 
 ## Eval behavior
 
