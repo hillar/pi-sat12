@@ -51,6 +51,7 @@ export interface EvalProgress {
 }
 
 /**
+ * REQ-EV-3: The eval classifies a failure by the rule that produced it and lists retry causes.
  * Bucket a validation error by the rule that produced it.
  * The eval classifies with a regex. The validator messages stay unchanged,
  * because those messages go back to the model during a retry.
@@ -265,12 +266,14 @@ export const sat12Eval = {
 		const total = fixtures.length * n;
 		let index = 0;
 
+		// REQ-EV-1: The eval runs each fixture N times and reports the first-attempt pass rate.
 		for (const fixture of fixtures) {
 			for (let run = 1; run <= n; run++) {
 				index++;
 				const cellName = `${fixture.id}__${run}`;
 				const cellPath = join(rawDir, `${cellName}.json`);
 
+				// REQ-EV-2: The eval resumes by skipping a cell whose raw file already exists.
 				if (resume) {
 					try {
 						const existing = await readFile(cellPath, "utf8");
@@ -320,6 +323,7 @@ export const sat12Eval = {
 			}
 		}
 
+		// REQ-EV-4: The eval writes RESULTS.md, results.json, and one raw file per cell.
 		const report = buildReport(records, modelLabel, n);
 		await writeFile(join(resultsDir, "RESULTS.md"), report, "utf8");
 		await writeFile(

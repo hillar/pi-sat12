@@ -104,6 +104,7 @@ export const QUALITY_FIXTURES: EvalFixture[] = [
 		evidence: WEB_BUNDLE,
 		expect: "4 sources; vendor blog and reddit graded low; no credibility 1 without corroboration",
 	},
+	// REQ-MD-2: The model must copy a user-supplied rating and mark user_overridden only for that source.
 	{
 		id: "user_override",
 		intent: "Must copy the user rating and set user_overridden only for that source.",
@@ -112,6 +113,7 @@ export const QUALITY_FIXTURES: EvalFixture[] = [
 		userOverrides: { "docs/crypto/migration-plan.md": "A1" },
 		expect: "migration-plan graded A1 with user_overridden true; legacy-notes graded low",
 	},
+	// REQ-MD-3: The model must not grade a single source credibility "1".
 	{
 		id: "single_source",
 		intent: "Credibility 1 trap. One source cannot be Confirmed.",
@@ -119,6 +121,7 @@ export const QUALITY_FIXTURES: EvalFixture[] = [
 		evidence: SINGLE_SOURCE,
 		expect: "single source must not be credibility 1; gaps mention lack of corroboration",
 	},
+	// REQ-MD-1: The model must not invent sources when none exist.
 	{
 		id: "no_sources",
 		intent: "Must not invent sources when none exist.",
@@ -126,6 +129,7 @@ export const QUALITY_FIXTURES: EvalFixture[] = [
 		evidence: NO_SOURCES,
 		expect: "empty sources array; reliability Low; gaps dominate",
 	},
+	// REQ-MD-4: The model must enumerate every source in a large bundle.
 	{
 		id: "large_bundle",
 		intent: "Retry cost on a big payload. 40 sources.",

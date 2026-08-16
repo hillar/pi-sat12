@@ -268,6 +268,7 @@ export function validateAdmiraltySemantics(
 	const ids = new Set<string>();
 
 	for (const s of sourceRatings) {
+		// REQ-ADM-2: Each source_id must appear exactly once in the sources list.
 		// Rule 2: do not allow a duplicate source_id.
 		if (ids.has(s.source_id)) {
 			return `Duplicate source_id "${s.source_id}". Each source must appear exactly once.`;
@@ -276,6 +277,7 @@ export function validateAdmiraltySemantics(
 	}
 
 	for (const s of sourceRatings) {
+		// REQ-ADM-1: The admiralty_code must equal reliability letter plus credibility number.
 		// Rule 1: admiralty_code must equal reliability plus credibility.
 		if (s.admiralty_code && s.reliability) {
 			const expected = `${s.reliability}${s.credibility}`;
@@ -284,6 +286,7 @@ export function validateAdmiraltySemantics(
 			}
 		}
 
+		// REQ-ADM-3: Each corroborated_by id must exist in the sources list. A source must not list itself.
 		// Rule 3: each corroborated_by id must exist. A source must not list itself.
 		if (s.corroborated_by) {
 			for (const ref of s.corroborated_by) {
@@ -296,6 +299,8 @@ export function validateAdmiraltySemantics(
 			}
 		}
 
+		// REQ-ADM-5: An unverified user_overridden flag must not fail validation.
+		// REQ-ADM-6: When a real user override exists, the emitted code must match it.
 		// Rule 6: when a real user override exists, the emitted code must match it.
 		// Do not fail when user_overridden is set but no override exists. The model
 		// cannot see the user ratings for web sources, so it cannot verify the flag.
@@ -308,6 +313,7 @@ export function validateAdmiraltySemantics(
 			}
 		}
 
+		// REQ-ADM-4: Credibility "1" (Confirmed) needs corroboration or a valid user override.
 		// Rule 4: credibility "1" (Confirmed) needs corroboration or a valid override.
 		if (s.credibility === "1") {
 			const hasCorroboration = (s.corroborated_by?.length ?? 0) >= 1;

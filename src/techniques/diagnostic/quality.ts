@@ -57,6 +57,9 @@ function checkQualitySemantics(data: unknown, context?: SemanticCheckContext): s
 	const d = data as QualityOutput;
 	const hasSources = Array.isArray(d.sources) && d.sources.length > 0;
 
+	// REQ-Q-3: A context with only hasEvidence keeps the strict rule.
+	// REQ-Q-2: Short or missing evidence does not force a sources list.
+	// REQ-Q-1: Long evidence must produce a non-empty sources list.
 	// Require a source list only when the evidence is long enough to hold sources.
 	const evidenceLength =
 		context?.evidenceLength ?? (context?.hasEvidence ? MIN_EVIDENCE_CHARS_FOR_SOURCES : 0);
@@ -65,6 +68,7 @@ function checkQualitySemantics(data: unknown, context?: SemanticCheckContext): s
 	}
 
 	if (hasSources) {
+		// REQ-Q-4: The quality check must run the Admiralty rules on the emitted sources.
 		return validateAdmiraltySemantics(
 			d.sources!.map((s) => ({
 				source_id: s.source_id,
