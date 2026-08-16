@@ -33,6 +33,14 @@ Use the requirement ID in the change message when you change code.
 | REQ-EV-3 | The eval classifies a failure by the rule that produced it and lists retry causes. | `classifyFailure` via unit run | all fixtures |
 | REQ-EV-4 | The eval writes `RESULTS.md`, `results.json`, and one raw file per cell. | manual run | all fixtures |
 | REQ-EV-5 | The prompt STE lint runs in JavaScript without a Python runtime. | `evals/ste-lint.test.ts` | none |
+| REQ-EV-6 | The LLM usage accumulator and abort utilities function correctly. | `evals/llm-util.test.ts` | none |
+| REQ-EV-7 | The message builder formats prompt context, evidence, and Admiralty instructions. | `evals/messages.test.ts` | none |
+| REQ-EV-8 | Session creation, status formatting, and persistence operate as specified. | `evals/session.test.ts` | none |
+| REQ-EV-9 | Web resource extraction parses block, markdown, and raw URL formats. | `evals/okf-extract.test.ts` | none |
+| REQ-EV-10 | The OKF writer generates complete analysis bundles and updates the index. | `evals/okf.test.ts` | none |
+| REQ-EV-11 | The executive report renderer transforms markdown safely to HTML. | `evals/render.test.ts` | none |
+| REQ-EV-12 | TypeBox schemas validate synthesis and quality outputs correctly. | `evals/schema.test.ts` | none |
+| REQ-EV-13 | The settings writer parses keys and persists settings under the user config directory. | `evals/config.test.ts` | none |
 
 ## Synthesis summary
 
