@@ -102,6 +102,39 @@ export const CLEAN_FIXTURE = `The system retries a failed upload automatically. 
 
 If failures continue, make sure that your credentials are correct. If the problem continues, contact support.`;
 
+/**
+ * Violation categories that trigger a retry on synthesis bottom_line_assessment.
+ * Banned modals, perfect tense, and -ing clauses are allowed to preserve analytic hedging.
+ */
+export const SUMMARY_BLOCKING = [
+	"sentence_over_limit",
+	"contraction",
+	"latin_abbrev",
+	"slop_word",
+	"semicolon",
+	"trailing_condition",
+	"synonym_rotation",
+];
+
+export function lintSummary(text, budget = 1) {
+	if (!text || typeof text !== "string") return null;
+	const res = lint(text, "procedural");
+	const activeCounts = SUMMARY_BLOCKING.map((k) => ({
+		key: k,
+		count: res.violations[k] || 0,
+	})).filter((v) => v.count > 0);
+
+	const totalBlocking = activeCounts.reduce((sum, v) => sum + v.count, 0);
+	if (totalBlocking <= budget) return null;
+
+	const breakdown = activeCounts.map((v) => `${v.key}=${v.count}`).join(", ");
+	return (
+		`The bottom_line_assessment has ${totalBlocking} STE style violation(s) (${breakdown}). ` +
+		`The maximum allowed budget is ${budget}. Rewrite the bottom_line_assessment to use short sentences (<=20 words), ` +
+		`no contractions, no latin abbreviations (e.g./i.e./etc), no semicolons, no buzzwords/slop, and consistent terminology.`
+	);
+}
+
 export function selfTest() {
 	const slop = lint(SLOP_FIXTURE, "procedural");
 	const clean = lint(CLEAN_FIXTURE, "procedural");

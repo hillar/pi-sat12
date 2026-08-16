@@ -11,6 +11,7 @@ import {
 import type { TechniqueResult } from "./techniques/types.ts";
 import type { AdversarialExchange } from "./adversarial.ts";
 import { ALL_TECHNIQUES } from "./techniques/index.ts";
+import { lintSummary } from "../evals/vendor/ste_lint.mjs";
 
 
 
@@ -169,6 +170,7 @@ export async function synthesize(
 		schema: SynthesisOutputSchema,
 		temperature: 0.3,
 		signal,
+		semanticCheck: (d) => lintSummary(d.bottom_line_assessment),
 	});
 	usage.add(callUsage, model.id, (model as any).name || model.id, "primary", "synthesis", durationMs);
 

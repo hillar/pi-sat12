@@ -33,6 +33,12 @@ Use the requirement ID in the change message when you change code.
 | REQ-EV-4 | The eval writes `RESULTS.md`, `results.json`, and one raw file per cell. | manual run | all fixtures |
 | REQ-EV-5 | The prompt STE lint runs in JavaScript without a Python runtime. | `evals/ste-lint.test.ts` | none |
 
+## Synthesis summary
+
+| ID | Requirement | Test | Eval fixture |
+|---|---|---|---|
+| REQ-SYN-1 | The synthesis bottom-line assessment allows no more than 1 blocking STE violation; modals and perfect tense are allowed. | `evals/ste-lint.test.ts` | none |
+
 ## Model behavior (prompt level)
 
 The model owns these. The eval measures them. The validator cannot enforce some of them.
