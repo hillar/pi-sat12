@@ -31,6 +31,7 @@ Use the requirement ID in the change message when you change code.
 | REQ-EV-2 | The eval resumes by skipping a cell whose raw file already exists. | manual run | all fixtures |
 | REQ-EV-3 | The eval classifies a failure by the rule that produced it and lists retry causes. | `classifyFailure` via unit run | all fixtures |
 | REQ-EV-4 | The eval writes `RESULTS.md`, `results.json`, and one raw file per cell. | manual run | all fixtures |
+| REQ-EV-5 | The prompt STE lint runs in JavaScript without a Python runtime. | `evals/ste-lint.test.ts` | none |
 
 ## Model behavior (prompt level)
 

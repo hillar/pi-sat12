@@ -10,12 +10,7 @@
  *      node evals/lint-prompts.mjs --json
  */
 
-import { execFileSync } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const LINTER = join(HERE, "vendor", "ste_lint.py");
+import { lint } from "./vendor/ste_lint.mjs";
 
 /**
  * Every prompt in the project.
@@ -37,14 +32,7 @@ const PROMPT_SOURCES = [
 	{ id: "alt_futures", module: "../src/techniques/imaginative/alt_futures.ts", pick: (m) => m.altFuturesTechnique.systemPrompt },
 ];
 
-/** Run the vendored linter over one text. */
-function lint(text, type) {
-	const raw = execFileSync("python3", [LINTER, "--type", type, "-"], {
-		input: text,
-		encoding: "utf8",
-	});
-	return JSON.parse(raw);
-}
+
 
 /** Load every prompt. Skip a module that does not expose one. */
 async function loadPrompts() {
